@@ -73,12 +73,14 @@ type tcpBodyFindSuc struct {
 	Target *Vnode
 	Num    int
 	Key    []byte
+	Meta   LookupMetaData
 }
 type tcpBodyVnodeError struct {
 	Vnode *Vnode
 	Err   error
 }
 type tcpBodyVnodeListError struct {
+	Meta   LookupMetaData
 	Vnodes []*Vnode
 	Err    error
 }
@@ -400,20 +402,26 @@ func (t *TCPTransport) Notify(target, self *Vnode) ([]*Vnode, error) {
 }
 
 // Find a successor
-func (t *TCPTransport) FindSuccessors(vn *Vnode, n int, k []byte) ([]*Vnode, error) {
+func (t *TCPTransport) FindSuccessors(vn *Vnode, n int, k []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
 	// Get a conn
 	out, err := t.getConn(vn.Host)
 	if err != nil {
-		return nil, err
+		return meta, nil, err
 	}
-
-	respChan := make(chan []*Vnode, 1)
+	type Result struct {
+		Meta  LookupMetaData
+		Nodes []*Vnode
+	}
+	respChan := make(chan Result, 1)
 	errChan := make(chan error, 1)
+
+	// add ourselves to the lookup meta
+	meta.LookupPath = append(meta.LookupPath, vn)
 
 	go func() {
 		// Send a list command
 		out.header.ReqType = tcpFindSucReq
-		body := tcpBodyFindSuc{Target: vn, Num: n, Key: k}
+		body := tcpBodyFindSuc{Target: vn, Num: n, Key: k, Meta: meta}
 		if err := out.enc.Encode(&out.header); err != nil {
 			errChan <- err
 			return
@@ -433,7 +441,7 @@ func (t *TCPTransport) FindSuccessors(vn *Vnode, n int, k []byte) ([]*Vnode, err
 		// Return the connection
 		t.returnConn(out)
 		if resp.Err == nil {
-			respChan <- resp.Vnodes
+			respChan <- Result{Nodes: resp.Vnodes, Meta: resp.Meta}
 		} else {
 			errChan <- resp.Err
 		}
@@ -441,11 +449,11 @@ func (t *TCPTransport) FindSuccessors(vn *Vnode, n int, k []byte) ([]*Vnode, err
 
 	select {
 	case <-time.After(t.timeout):
-		return nil, fmt.Errorf("Command timed out!")
+		return meta, nil, fmt.Errorf("Command timed out!")
 	case err := <-errChan:
-		return nil, err
+		return meta, nil, err
 	case res := <-respChan:
-		return res, nil
+		return res.Meta, res.Nodes, nil
 	}
 }
 
@@ -748,8 +756,9 @@ func (t *TCPTransport) handleConn(conn *net.TCPConn) {
 			resp := tcpBodyVnodeListError{}
 			sendResp = &resp
 			if ok {
-				nodes, err := obj.FindSuccessors(body.Num, body.Key)
+				meta, nodes, err := obj.FindSuccessors(body.Num, body.Key, body.Meta)
 				resp.Vnodes = trimSlice(nodes)
+				resp.Meta = meta
 				resp.Err = err
 			} else {
 				resp.Err = fmt.Errorf("Target VN not found! Target %s:%s",

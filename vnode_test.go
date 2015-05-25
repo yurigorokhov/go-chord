@@ -522,7 +522,7 @@ func TestVnodeFindSuccessors(t *testing.T) {
 	// Do a lookup on the key
 	for i := 0; i < len(r.vnodes); i++ {
 		vn := r.vnodes[i]
-		succ, err := vn.FindSuccessors(1, key)
+		_, succ, err := vn.FindSuccessors(1, key, NewLookupMetaData())
 		if err != nil {
 			t.Fatalf("unexpected err! %s", err)
 		}
@@ -558,7 +558,7 @@ func TestVnodeFindSuccessorsMultSucc(t *testing.T) {
 	// Do a lookup on the key
 	for i := 0; i < len(r.vnodes); i++ {
 		vn := r.vnodes[i]
-		succ, err := vn.FindSuccessors(1, key)
+		_, succ, err := vn.FindSuccessors(1, key, NewLookupMetaData())
 		if err != nil {
 			t.Fatalf("unexpected err! %s", err)
 		}
@@ -597,7 +597,7 @@ func TestVnodeFindSuccessorsSomeDead(t *testing.T) {
 	// Do a lookup on the key
 	for i := 0; i < len(r.vnodes); i++ {
 		vn := r.vnodes[i]
-		succ, err := vn.FindSuccessors(1, key)
+		_, succ, err := vn.FindSuccessors(1, key, NewLookupMetaData())
 		if err != nil {
 			t.Fatalf("(%d) unexpected err! %s", i, err)
 		}

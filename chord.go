@@ -7,6 +7,7 @@ package chord
 import (
 	"crypto/sha1"
 	"fmt"
+	"go-chord/stats"
 	"hash"
 	"time"
 )
@@ -26,7 +27,7 @@ type Transport interface {
 	Notify(target, self *Vnode) ([]*Vnode, error)
 
 	// Find a successor
-	FindSuccessors(*Vnode, int, []byte) ([]*Vnode, error)
+	FindSuccessors(*Vnode, int, []byte, LookupMetaData) (LookupMetaData, []*Vnode, error)
 
 	// Clears a predecessor if it matches a given vnode. Used to leave.
 	ClearPredecessor(target, self *Vnode) error
@@ -38,11 +39,22 @@ type Transport interface {
 	Register(*Vnode, VnodeRPC)
 }
 
+// Meta data that is passed along and updated at each node
+type LookupMetaData struct {
+	LookupPath []*Vnode
+}
+
+func NewLookupMetaData() LookupMetaData {
+	return LookupMetaData{
+		LookupPath: make([]*Vnode, 0),
+	}
+}
+
 // These are the methods to invoke on the registered vnodes
 type VnodeRPC interface {
 	GetPredecessor() (*Vnode, error)
 	Notify(*Vnode) ([]*Vnode, error)
-	FindSuccessors(int, []byte) ([]*Vnode, error)
+	FindSuccessors(int, []byte, LookupMetaData) (LookupMetaData, []*Vnode, error)
 	ClearPredecessor(*Vnode) error
 	SkipSuccessor(*Vnode) error
 }
@@ -65,6 +77,7 @@ type Config struct {
 	StabilizeMax  time.Duration    // Maximum stabilization time
 	NumSuccessors int              // Number of successors to maintain
 	Delegate      Delegate         // Invoked to handle ring events
+	Stats         stats.ChordStats // Collect chord statistics
 	hashBits      int              // Bit size of the hash function
 }
 
@@ -105,6 +118,7 @@ func DefaultConfig(hostname string) *Config {
 		time.Duration(45 * time.Second),
 		8,   // 8 successors
 		nil, // No delegate
+		&stats.BlackholeStats{},
 		160, // 160bit hash function
 	}
 }
@@ -146,7 +160,7 @@ func Join(conf *Config, trans Transport, existing string) (*Ring, error) {
 		nearest := nearestVnodeToKey(hosts, vn.Id)
 
 		// Query for a list of successors to this Vnode
-		succs, err := trans.FindSuccessors(nearest, conf.NumSuccessors, vn.Id)
+		_, succs, err := trans.FindSuccessors(nearest, conf.NumSuccessors, vn.Id, NewLookupMetaData())
 		if err != nil {
 			return nil, fmt.Errorf("Failed to find successor for vnodes! Got %s", err)
 		}
@@ -206,10 +220,14 @@ func (r *Ring) Lookup(n int, key []byte) ([]*Vnode, error) {
 	nearest := r.nearestVnode(key_hash)
 
 	// Use the nearest node for the lookup
-	successors, err := nearest.FindSuccessors(n, key_hash)
+	startTime := time.Now()
+	meta, successors, err := nearest.FindSuccessors(n, key_hash, NewLookupMetaData())
 	if err != nil {
 		return nil, err
 	}
+	elapsedTime := time.Since(startTime)
+	go r.config.Stats.LookupTime(elapsedTime)
+	go r.config.Stats.LookupNumberOfJumps(len(meta.LookupPath))
 
 	// Trim the nil successors
 	for successors[len(successors)-1] == nil {

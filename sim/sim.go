@@ -4,13 +4,14 @@ import (
 	"errors"
 	"fmt"
 	"go-chord"
+	"go-chord/stats"
 	"math/rand"
 	"os"
 	"time"
 )
 
 const (
-	NodeCount    = 15
+	NodeCount    = 10
 	FirstTcpPort = 9020
 )
 
@@ -32,6 +33,7 @@ func main() {
 		conf.StabilizeMin = time.Duration(15 * time.Millisecond)
 		conf.StabilizeMax = time.Duration(1000 * time.Millisecond)
 		conf.NumSuccessors = 1
+		conf.Stats = &stats.PrintStats{}
 
 		// 2 virtual nodes per physical node
 		conf.NumVnodes = 2
@@ -80,7 +82,6 @@ func main() {
 }
 
 // Performs lookupCount random key lookups
-// each lookup is performed on each node, and the result is checked to be the same!
 func RandomKeyLookups(nodes map[string]NodeInfo, lookupCount int) error {
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	for i := 0; i < lookupCount; i++ {

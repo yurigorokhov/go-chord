@@ -191,7 +191,7 @@ func (vn *localVnode) fixFingerTable() error {
 	offset := powerOffset(vn.Id, vn.last_finger, hb)
 
 	// Find the successor
-	nodes, err := vn.FindSuccessors(1, offset)
+	_, nodes, err := vn.FindSuccessors(1, offset, NewLookupMetaData())
 	if nodes == nil || len(nodes) == 0 || err != nil {
 		return err
 	}
@@ -245,10 +245,10 @@ func (vn *localVnode) checkPredecessor() error {
 }
 
 // Finds next N successors. N must be <= NumSuccessors
-func (vn *localVnode) FindSuccessors(n int, key []byte) ([]*Vnode, error) {
+func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
 	// Check if we are the immediate predecessor
 	if betweenRightIncl(vn.Id, vn.successors[0].Id, key) {
-		return vn.successors[:n], nil
+		return meta, vn.successors[:n], nil
 	}
 
 	// Try the closest preceeding nodes
@@ -262,9 +262,9 @@ func (vn *localVnode) FindSuccessors(n int, key []byte) ([]*Vnode, error) {
 		}
 
 		// Try that node, break on success
-		res, err := vn.ring.transport.FindSuccessors(closest, n, key)
+		meta, res, err := vn.ring.transport.FindSuccessors(closest, n, key, meta)
 		if err == nil {
-			return res, nil
+			return meta, res, nil
 		} else {
 			log.Printf("[ERR] Failed to contact %s. Got %s", closest.String(), err)
 		}
@@ -280,12 +280,12 @@ func (vn *localVnode) FindSuccessors(n int, key []byte) ([]*Vnode, error) {
 			if len(remain) > n {
 				remain = remain[:n]
 			}
-			return remain, nil
+			return meta, remain, nil
 		}
 	}
 
 	// Checked all closer nodes and our successors!
-	return nil, fmt.Errorf("Exhausted all preceeding nodes!")
+	return NewLookupMetaData(), nil, fmt.Errorf("Exhausted all preceeding nodes!")
 }
 
 // Instructs the vnode to leave

@@ -22,9 +22,9 @@ func (mv *MockVnodeRPC) Notify(vn *Vnode) ([]*Vnode, error) {
 	mv.not_pred = vn
 	return mv.succ_list, mv.err
 }
-func (mv *MockVnodeRPC) FindSuccessors(n int, key []byte) ([]*Vnode, error) {
+func (mv *MockVnodeRPC) FindSuccessors(n int, key []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
 	mv.key = key
-	return mv.succ, mv.err
+	return meta, mv.succ, mv.err
 }
 
 func (mv *MockVnodeRPC) ClearPredecessor(p *Vnode) error {
@@ -163,7 +163,7 @@ func TestLocalFindSucc(t *testing.T) {
 	l.Register(vn, mockVN)
 
 	key := []byte("test")
-	res, err := l.FindSuccessors(vn, 1, key)
+	_, res, err := l.FindSuccessors(vn, 1, key, NewLookupMetaData())
 	if err != nil {
 		t.Fatalf("local FindSuccessor failed")
 	}
@@ -175,7 +175,7 @@ func TestLocalFindSucc(t *testing.T) {
 	}
 
 	unknown := &Vnode{Id: []byte{1}}
-	res, err = l.FindSuccessors(unknown, 1, key)
+	_, res, err = l.FindSuccessors(unknown, 1, key, NewLookupMetaData())
 	if err == nil {
 		t.Fatalf("remote find should fail")
 	}
@@ -279,7 +279,7 @@ func TestBHNotify(t *testing.T) {
 func TestBHFindSuccessors(t *testing.T) {
 	bh := BlackholeTransport{}
 	vn := &Vnode{Id: []byte{12}}
-	_, err := bh.FindSuccessors(vn, 1, []byte("test"))
+	_, _, err := bh.FindSuccessors(vn, 1, []byte("test"), NewLookupMetaData())
 	if err.Error()[:18] != "Failed to connect!" {
 		t.Fatalf("expected fail")
 	}

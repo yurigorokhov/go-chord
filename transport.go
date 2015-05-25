@@ -104,17 +104,20 @@ func (lt *LocalTransport) Notify(vn, self *Vnode) ([]*Vnode, error) {
 	return lt.remote.Notify(vn, self)
 }
 
-func (lt *LocalTransport) FindSuccessors(vn *Vnode, n int, key []byte) ([]*Vnode, error) {
+func (lt *LocalTransport) FindSuccessors(vn *Vnode, n int, key []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
 	// Look for it locally
 	obj, ok := lt.get(vn)
 
+	// add this node to the lookup path
+	meta.LookupPath = append(meta.LookupPath, vn)
+
 	// If it exists locally, handle it
 	if ok {
-		return obj.FindSuccessors(n, key)
+		return obj.FindSuccessors(n, key, meta)
 	}
 
 	// Pass onto remote
-	return lt.remote.FindSuccessors(vn, n, key)
+	return lt.remote.FindSuccessors(vn, n, key, meta)
 }
 
 func (lt *LocalTransport) ClearPredecessor(target, self *Vnode) error {
@@ -183,8 +186,8 @@ func (*BlackholeTransport) Notify(vn, self *Vnode) ([]*Vnode, error) {
 	return nil, fmt.Errorf("Failed to connect! Blackhole: %s", vn.String())
 }
 
-func (*BlackholeTransport) FindSuccessors(vn *Vnode, n int, key []byte) ([]*Vnode, error) {
-	return nil, fmt.Errorf("Failed to connect! Blackhole: %s", vn.String())
+func (*BlackholeTransport) FindSuccessors(vn *Vnode, n int, key []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
+	return NewLookupMetaData(), nil, fmt.Errorf("Failed to connect! Blackhole: %s", vn.String())
 }
 
 func (*BlackholeTransport) ClearPredecessor(target, self *Vnode) error {

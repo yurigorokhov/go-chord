@@ -51,11 +51,11 @@ func (ml *MultiLocalTrans) Notify(target, self *Vnode) ([]*Vnode, error) {
 }
 
 // Find a successor
-func (ml *MultiLocalTrans) FindSuccessors(v *Vnode, n int, k []byte) ([]*Vnode, error) {
+func (ml *MultiLocalTrans) FindSuccessors(v *Vnode, n int, k []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
 	if local, ok := ml.hosts[v.Host]; ok {
-		return local.FindSuccessors(v, n, k)
+		return local.FindSuccessors(v, n, k, meta)
 	}
-	return ml.remote.FindSuccessors(v, n, k)
+	return ml.remote.FindSuccessors(v, n, k, meta)
 }
 
 // Clears a predecessor if it matches a given vnode. Used to leave.
@@ -86,6 +86,8 @@ func (ml *MultiLocalTrans) Register(v *Vnode, o VnodeRPC) {
 func (ml *MultiLocalTrans) Deregister(host string) {
 	delete(ml.hosts, host)
 }
+
+var _ = Transport(&MultiLocalTrans{})
 
 func TestDefaultConfig(t *testing.T) {
 	conf := DefaultConfig("test")
