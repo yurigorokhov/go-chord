@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"flag"
 	"fmt"
 	"go-chord"
 	"go-chord/stats"
@@ -22,6 +23,14 @@ type NodeInfo struct {
 
 func main() {
 
+	// flags
+	var simulationName = flag.String("name", "default", "name of this simulation, used to name stats in statsd")
+	flag.Parse()
+
+	// collect stats
+	stats := stats.NewPrintStats()
+	defer stats.Print()
+
 	// get a ring up and running!
 	nodeMap := make(map[string]NodeInfo)
 	port := FirstTcpPort
@@ -33,7 +42,7 @@ func main() {
 		conf.StabilizeMin = time.Duration(15 * time.Millisecond)
 		conf.StabilizeMax = time.Duration(1000 * time.Millisecond)
 		conf.NumSuccessors = 1
-		conf.Stats = &stats.PrintStats{}
+		conf.Stats = stats
 
 		// 2 virtual nodes per physical node
 		conf.NumVnodes = 2
@@ -73,12 +82,12 @@ func main() {
 	fmt.Println("\nWaiting 15 seconds for the ring to settle")
 	time.Sleep(15 * time.Second)
 
-	fmt.Println("\nBeginning Simulation")
+	fmt.Printf("\nBeginning Simulation with name %s\n", *simulationName)
 	if err := RandomKeyLookups(nodeMap, 100); err != nil {
 		fmt.Printf("\nError running simulation: %v\n", err)
 		os.Exit(1)
 	}
-	os.Exit(0)
+	fmt.Println("\nSimulation finished")
 }
 
 // Performs lookupCount random key lookups
