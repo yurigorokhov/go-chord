@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	NodeCount    = 16
-	FirstTcpPort = 9020
+	DefaultNodeCount = 16
+	FirstTcpPort     = 9020
 )
 
 type NodeInfo struct {
@@ -25,6 +25,7 @@ func main() {
 
 	// flags
 	var simulationName = flag.String("name", "default", "name of this simulation, used to name stats in statsd")
+	var numNodes = flag.Int("numnodes", DefaultNodeCount, "number of nodes")
 	flag.Parse()
 
 	// collect stats
@@ -35,12 +36,12 @@ func main() {
 	nodeMap := make(map[string]NodeInfo)
 	port := FirstTcpPort
 	tcpTimeout := time.Second * 5
-	for i := 0; i < NodeCount; i++ {
+	for i := 0; i < *numNodes; i++ {
 		conf := chord.DefaultConfig(fmt.Sprintf(":%v", port))
 
 		// we don't need to stabilize that often, since we are not joining/leaving nodes yet
 		conf.StabilizeMin = time.Duration(15 * time.Millisecond)
-		conf.StabilizeMax = time.Duration(1000 * time.Millisecond)
+		conf.StabilizeMax = time.Duration(1 * time.Second)
 		conf.NumSuccessors = 1
 		conf.Stats = stats
 
@@ -77,10 +78,10 @@ func main() {
 			Transport: transport,
 		}
 		port++
-		fmt.Printf("\nCreated node at %v", conf.Hostname)
 	}
-	fmt.Println("\nWaiting 15 seconds for the ring to settle")
-	time.Sleep(15 * time.Second)
+	fmt.Printf("\nCreated %v nodes", *numNodes)
+	fmt.Printf("\nWaiting %v seconds for the ring to settle\n", *numNodes)
+	time.Sleep(time.Duration(int64(time.Second) * int64(*numNodes)))
 
 	fmt.Printf("\nBeginning Simulation with name %s\n", *simulationName)
 	if err := RandomKeyLookups(nodeMap, 100); err != nil {
