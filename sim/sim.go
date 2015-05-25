@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	NodeCount    = 15
+	NodeCount    = 16
 	FirstTcpPort = 9020
 )
 
@@ -70,8 +70,8 @@ func main() {
 		port++
 		fmt.Printf("\nCreated node at %v", conf.Hostname)
 	}
-	fmt.Println("\nWaiting 10 seconds for the ring to settle")
-	time.Sleep(10 * time.Second)
+	fmt.Println("\nWaiting 15 seconds for the ring to settle")
+	time.Sleep(15 * time.Second)
 
 	fmt.Println("\nBeginning Simulation")
 	if err := RandomKeyLookups(nodeMap, 100); err != nil {
