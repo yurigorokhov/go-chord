@@ -78,6 +78,7 @@ type Config struct {
 	NumSuccessors int              // Number of successors to maintain
 	Delegate      Delegate         // Invoked to handle ring events
 	Stats         stats.ChordStats // Collect chord statistics
+	UseCache      bool             // Use a cache of nodes and their hash values
 	hashBits      int              // Bit size of the hash function
 }
 
@@ -104,6 +105,7 @@ type Ring struct {
 	config     *Config
 	transport  Transport
 	vnodes     []*localVnode
+	nodeCache  map[string]*Vnode
 	delegateCh chan func()
 	shutdown   chan bool
 }
@@ -119,7 +121,8 @@ func DefaultConfig(hostname string) *Config {
 		8,   // 8 successors
 		nil, // No delegate
 		&stats.BlackholeStats{},
-		160, // 160bit hash function
+		true, // use a cache
+		160,  // 160bit hash function
 	}
 }
 
@@ -216,6 +219,11 @@ func (r *Ring) Lookup(n int, key []byte) ([]*Vnode, error) {
 	h.Write(key)
 	key_hash := h.Sum(nil)
 
+	// TODO: do a cache request if cache is enabled
+	if r.config.UseCache {
+
+	}
+
 	// Find the nearest local vnode
 	nearest := r.nearestVnode(key_hash)
 
@@ -228,6 +236,13 @@ func (r *Ring) Lookup(n int, key []byte) ([]*Vnode, error) {
 	elapsedTime := time.Since(startTime)
 	go r.config.Stats.LookupTime(elapsedTime)
 	go r.config.Stats.LookupNumberOfJumps(len(meta.LookupPath))
+
+	// Update cache
+	if r.config.UseCache {
+		for _, successor := range successors {
+			r.nodeCache[string(successor.Id)] = successor
+		}
+	}
 
 	// Trim the nil successors
 	for successors[len(successors)-1] == nil {
