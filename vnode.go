@@ -251,6 +251,9 @@ func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (Lo
 		return meta, vn.successors[:n], nil
 	}
 
+	// Append ourselves to the node path
+	meta.LookupPath = append(meta.LookupPath, &vn.Vnode)
+
 	// Try the closest preceeding nodes
 	cp := closestPreceedingVnodeIterator{}
 	cp.init(vn, key)

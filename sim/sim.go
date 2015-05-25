@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	NodeCount    = 10
+	NodeCount    = 15
 	FirstTcpPort = 9020
 )
 

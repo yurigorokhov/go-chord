@@ -108,9 +108,6 @@ func (lt *LocalTransport) FindSuccessors(vn *Vnode, n int, key []byte, meta Look
 	// Look for it locally
 	obj, ok := lt.get(vn)
 
-	// add this node to the lookup path
-	meta.LookupPath = append(meta.LookupPath, vn)
-
 	// If it exists locally, handle it
 	if ok {
 		return obj.FindSuccessors(n, key, meta)

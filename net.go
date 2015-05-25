@@ -415,9 +415,6 @@ func (t *TCPTransport) FindSuccessors(vn *Vnode, n int, k []byte, meta LookupMet
 	respChan := make(chan Result, 1)
 	errChan := make(chan error, 1)
 
-	// add ourselves to the lookup meta
-	meta.LookupPath = append(meta.LookupPath, vn)
-
 	go func() {
 		// Send a list command
 		out.header.ReqType = tcpFindSucReq
