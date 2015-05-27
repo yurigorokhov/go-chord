@@ -13,7 +13,7 @@ import (
 
 const (
 	DefaultNodeCount = 16
-	FirstTcpPort     = 9020
+	FirstTcpPort     = 9000
 )
 
 type NodeInfo struct {
@@ -24,9 +24,65 @@ type NodeInfo struct {
 func main() {
 
 	// flags
+	var simulationType = flag.String("type", "local", "type of simulation (local or distributed)")
 	var simulationName = flag.String("name", "default", "name of this simulation, used to name stats in statsd")
+	var join = flag.String("join", os.Getenv("JOIN"), "ip:port of ring to join, if empty start a new ring!")
+	var listen = flag.String("listen", os.Getenv("LISTEN"), "port to listen on")
 	var numNodes = flag.Int("numnodes", DefaultNodeCount, "number of nodes")
 	flag.Parse()
+
+	// parse simulation type
+	switch *simulationType {
+	case "local":
+		LocalSimulation(*numNodes, *simulationName)
+	case "distributed":
+		RemoteSimulation(*join, *listen)
+	default:
+		fmt.Printf("Unknown simulation type: %s", *simulationType)
+		os.Exit(1)
+	}
+}
+
+func RemoteSimulation(join string, listen string) {
+
+	// create a TCP transport
+	tcpTimeout := time.Second * 5
+	transport, err := chord.InitTCPTransport(listen, tcpTimeout)
+	if err != nil {
+		fmt.Printf("Error creating chord ring: %v", err)
+		os.Exit(1)
+	}
+	fmt.Printf("\nLISTEN: %v\n", listen)
+	conf := chord.DefaultConfig(listen)
+	conf.StabilizeMin = time.Duration(15 * time.Millisecond)
+	conf.StabilizeMax = time.Duration(3 * time.Second)
+	conf.NumSuccessors = 1
+
+	// if no ring was specified, we need to start one
+	if len(join) == 0 {
+
+		// create first host
+		fmt.Printf("\nCreating ring %v\n", listen)
+		_, err = chord.Create(conf, transport)
+		if err != nil {
+			fmt.Printf("Error creating chord ring: %v", err)
+			os.Exit(1)
+		}
+	} else {
+
+		fmt.Printf("\nJoining %v\n", join)
+		_, err = chord.Join(conf, transport, join)
+		if err != nil {
+			fmt.Printf("Error joining chord ring: %v", err)
+			os.Exit(1)
+		}
+	}
+
+	// wait indefinitely
+	<-make(chan bool)
+}
+
+func LocalSimulation(numberOfNodes int, simulationName string) {
 
 	// collect stats
 	stats := stats.NewPrintStats()
@@ -36,7 +92,7 @@ func main() {
 	nodeMap := make(map[string]NodeInfo)
 	port := FirstTcpPort
 	tcpTimeout := time.Second * 5
-	for i := 0; i < *numNodes; i++ {
+	for i := 0; i < numberOfNodes; i++ {
 		conf := chord.DefaultConfig(fmt.Sprintf(":%v", port))
 
 		// we don't need to stabilize that often, since we are not joining/leaving nodes yet
@@ -79,11 +135,11 @@ func main() {
 		}
 		port++
 	}
-	fmt.Printf("\nCreated %v nodes", *numNodes)
-	fmt.Printf("\nWaiting %v seconds for the ring to settle\n", *numNodes)
-	time.Sleep(time.Duration(int64(time.Second) * int64(*numNodes)))
+	fmt.Printf("\nCreated %v nodes", numberOfNodes)
+	fmt.Printf("\nWaiting %v seconds for the ring to settle\n", numberOfNodes)
+	time.Sleep(time.Duration(int64(time.Second) * int64(numberOfNodes)))
 
-	fmt.Printf("\nBeginning Simulation with name %s\n", *simulationName)
+	fmt.Printf("\nBeginning Simulation with name %s\n", simulationName)
 	if err := RandomKeyLookups(nodeMap, 100); err != nil {
 		fmt.Printf("\nError running simulation: %v\n", err)
 		os.Exit(1)

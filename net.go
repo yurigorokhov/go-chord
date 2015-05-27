@@ -202,6 +202,7 @@ func (t *TCPTransport) setupConn(c *net.TCPConn) {
 
 // Gets a list of the vnodes on the box
 func (t *TCPTransport) ListVnodes(host string) ([]*Vnode, error) {
+
 	// Get a conn
 	out, err := t.getConn(host)
 	if err != nil {
@@ -403,6 +404,7 @@ func (t *TCPTransport) Notify(target, self *Vnode) ([]*Vnode, error) {
 
 // Find a successor
 func (t *TCPTransport) FindSuccessors(vn *Vnode, n int, k []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
+
 	// Get a conn
 	out, err := t.getConn(vn.Host)
 	if err != nil {
