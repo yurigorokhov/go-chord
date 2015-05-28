@@ -18,7 +18,7 @@ const (
 
 type NodeInfo struct {
 	Ring      *chord.Ring
-	Transport *chord.TCPTransport
+	Transport *DelayedTCPTransport
 }
 
 func main() {
@@ -51,7 +51,7 @@ func main() {
 		var err error
 
 		// create a TCP transport
-		transport, err := chord.InitTCPTransport(fmt.Sprintf(":%v", port), tcpTimeout)
+		transport, err := InitDelayedTCPTransport(fmt.Sprintf(":%v", port), tcpTimeout, DefaultDelayConfig())
 		if err != nil {
 			fmt.Printf("Error creating chord ring: %v", err)
 			os.Exit(1)
