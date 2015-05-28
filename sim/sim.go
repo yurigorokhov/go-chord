@@ -14,6 +14,7 @@ import (
 const (
 	DefaultNodeCount = 16
 	FirstTcpPort     = 9020
+	TcpDelay         = 10
 )
 
 type NodeInfo struct {
@@ -26,6 +27,7 @@ func main() {
 	// flags
 	var simulationName = flag.String("name", "default", "name of this simulation, used to name stats in statsd")
 	var numNodes = flag.Int("numnodes", DefaultNodeCount, "number of nodes")
+	var tcpDelay = flag.Int("tcpdelay", TcpDelay, "tcp delay in milliseconds")
 	flag.Parse()
 
 	// collect stats
@@ -35,23 +37,26 @@ func main() {
 	// get a ring up and running!
 	nodeMap := make(map[string]NodeInfo)
 	port := FirstTcpPort
-	tcpTimeout := time.Second * 5
+	tcpTimeout := time.Second * 30
 	for i := 0; i < *numNodes; i++ {
 		conf := chord.DefaultConfig(fmt.Sprintf(":%v", port))
 
 		// we don't need to stabilize that often, since we are not joining/leaving nodes yet
-		conf.StabilizeMin = time.Duration(15 * time.Millisecond)
-		conf.StabilizeMax = time.Duration(1 * time.Second)
+		conf.StabilizeMin = time.Duration(1 * time.Millisecond)
+		conf.StabilizeMax = time.Duration(uint64(*numNodes) * uint64(time.Millisecond) * uint64(*tcpDelay) * 10)
 		conf.NumSuccessors = 1
 		conf.Stats = stats
 
 		// 2 virtual nodes per physical node
+		// TODO(yurig): can we get this down to 1?
 		conf.NumVnodes = 2
 		var r *chord.Ring
 		var err error
 
 		// create a TCP transport
-		transport, err := InitDelayedTCPTransport(fmt.Sprintf(":%v", port), tcpTimeout, DefaultDelayConfig())
+		delayConf := DefaultDelayConfig()
+		delayConf.FindSuccessorsDelay = uint64(*tcpDelay)
+		transport, err := InitDelayedTCPTransport(fmt.Sprintf(":%v", port), tcpTimeout, delayConf)
 		if err != nil {
 			fmt.Printf("Error creating chord ring: %v", err)
 			os.Exit(1)
@@ -80,10 +85,10 @@ func main() {
 		port++
 	}
 	fmt.Printf("\nCreated %v nodes", *numNodes)
-	fmt.Printf("\nWaiting %v seconds for the ring to settle\n", *numNodes)
-	time.Sleep(time.Duration(int64(time.Second) * int64(*numNodes)))
+	fmt.Printf("\nWaiting %v seconds for the ring to settle\n", *numNodes*2)
+	time.Sleep(time.Duration(int64(time.Second) * int64(*numNodes*2)))
 
-	fmt.Printf("\nBeginning Simulation with name %s\n", *simulationName)
+	fmt.Printf("\nBeginning Simulation with name %s and general TCP delay of %v\n", *simulationName, *tcpDelay)
 	if err := RandomKeyLookups(nodeMap, 100); err != nil {
 		fmt.Printf("\nError running simulation: %v\n", err)
 		os.Exit(1)

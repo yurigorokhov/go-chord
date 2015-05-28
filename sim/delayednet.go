@@ -40,7 +40,9 @@ func InitDelayedTCPTransport(listen string, timeout time.Duration, config *Delay
 }
 
 func (t *DelayedTCPTransport) FindSuccessors(vn *chord.Vnode, n int, k []byte, meta chord.LookupMetaData) (chord.LookupMetaData, []*chord.Vnode, error) {
-	time.Sleep(time.Duration(t.config.FindSuccessorsDelay * uint64(time.Millisecond)))
+	if t.config.FindSuccessorsDelay > 0 {
+		time.Sleep(time.Duration(t.config.FindSuccessorsDelay * uint64(time.Millisecond)))
+	}
 	return t.TCPTransport.FindSuccessors(vn, n, k, meta)
 }
 
