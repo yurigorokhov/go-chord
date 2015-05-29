@@ -15,10 +15,9 @@ const (
 	DefaultNodeCount = 16
 	FirstTcpPort     = 9020
 	TcpDelay         = 10
-	MaxRandomDelay   = 0
 )
 
-type NodeInfo struct {
+type nodeInfo struct {
 	Ring      *chord.Ring
 	Transport *DelayedTCPTransport
 }
@@ -29,7 +28,7 @@ func main() {
 	var simulationName = flag.String("name", "default", "name of this simulation, used to name stats in statsd")
 	var numNodes = flag.Int("numnodes", DefaultNodeCount, "number of nodes")
 	var tcpDelay = flag.Int("tcpdelay", TcpDelay, "tcp delay in milliseconds")
-	var maxRandomDelay = flag.Int("maxrandomdelay", MaxRandomDelay, "maximum random delay added to tcp requests in milliseconds. (default: 0)")
+	var randDelayConfig = flag.String("randdelayconfig", "", "'200:.1|300:.2|500:.3' means delay 200ms 10% of the time, 300ms 20% of the time")
 	flag.Parse()
 
 	// collect stats
@@ -39,10 +38,17 @@ func main() {
 	// delay config
 	delayConf := DefaultDelayConfig()
 	delayConf.FindSuccessorsDelay = uint64(*tcpDelay)
-	delayConf.FindSuccessorRandomDelayMax = uint64(*maxRandomDelay)
+	if *randDelayConfig != "" {
+		randDelays, err := NewProbabilityDelaysFromStr(*randDelayConfig)
+		if err != nil {
+			fmt.Printf("\nError parsing random delay config: %v", err)
+			os.Exit(1)
+		}
+		delayConf.RandomDelays = randDelays
+	}
 
 	// get a ring up and running!
-	nodeMap := make(map[string]NodeInfo)
+	nodeMap := make(map[string]nodeInfo)
 	port := FirstTcpPort
 	tcpTimeout := time.Second * 30
 	for i := 0; i < *numNodes; i++ {
@@ -83,7 +89,7 @@ func main() {
 				os.Exit(1)
 			}
 		}
-		nodeMap[conf.Hostname] = NodeInfo{
+		nodeMap[conf.Hostname] = nodeInfo{
 			Ring:      r,
 			Transport: transport,
 		}
@@ -92,8 +98,8 @@ func main() {
 	fmt.Printf("\nCreated %v nodes", *numNodes)
 	fmt.Printf("\nWaiting %v seconds for the ring to settle\n", *numNodes*2)
 	time.Sleep(time.Duration(int64(time.Second) * int64(*numNodes*2)))
-	fmt.Printf("\nBeginning Simulation with name %s and general TCP delay of %vms, and TCP random delay of %vms\n",
-		*simulationName, delayConf.FindSuccessorsDelay, delayConf.FindSuccessorRandomDelayMax)
+	fmt.Printf("\nBeginning Simulation with name %s and general TCP delay of %vms, and TCP random delay of %v\n",
+		*simulationName, delayConf.FindSuccessorsDelay, *randDelayConfig)
 	if err := RandomKeyLookups(nodeMap, 100); err != nil {
 		fmt.Printf("\nError running simulation: %v\n", err)
 		os.Exit(1)
@@ -102,7 +108,7 @@ func main() {
 }
 
 // Performs lookupCount random key lookups
-func RandomKeyLookups(nodes map[string]NodeInfo, lookupCount int) error {
+func RandomKeyLookups(nodes map[string]nodeInfo, lookupCount int) error {
 	fmt.Println("\n")
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	for i := 0; i < lookupCount; i++ {
