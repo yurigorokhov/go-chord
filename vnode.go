@@ -250,7 +250,7 @@ func (vn *localVnode) checkPredecessor() error {
 	return nil
 }
 
-//Find successor results, to be used in channels
+//Find successor results, used in channels
 type FindSuccessorsResult struct {
 	Meta  LookupMetaData
 	Nodes []*Vnode
@@ -338,7 +338,7 @@ func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (Lo
 
 	if vn.ring.config.UseCache {
 		resultChan := make(chan FindSuccessorsResult)
-		defer close(resultChan)
+		//defer close(resultChan)
 		go func() {
 			resultChan <- lookupCache()
 		}()
