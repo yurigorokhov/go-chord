@@ -29,6 +29,7 @@ func main() {
 	var numNodes = flag.Int("numnodes", DefaultNodeCount, "number of nodes")
 	var tcpDelay = flag.Int("tcpdelay", TcpDelay, "tcp delay in milliseconds")
 	var randDelayConfig = flag.String("randdelayconfig", "", "'200:.1|300:.2|500:.3' means delay 200ms 10% of the time, 300ms 20% of the time")
+	var useCache = flag.Bool("usecache", false, "use the node cache or not")
 	flag.Parse()
 
 	// collect stats
@@ -59,6 +60,7 @@ func main() {
 		conf.StabilizeMax = time.Duration(uint64(*numNodes) * uint64(time.Millisecond) * delayConf.MaxPossibleDelay() * 10)
 		conf.NumSuccessors = 1
 		conf.Stats = stats
+		conf.UseCache = *useCache
 
 		// 2 virtual nodes per physical node
 		// TODO(yurig): can we get this down to 1?

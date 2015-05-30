@@ -94,6 +94,7 @@ type localVnode struct {
 	ring        *Ring
 	successors  []*Vnode
 	finger      []*Vnode
+	nodeCache   map[string]*Vnode
 	last_finger int
 	predecessor *Vnode
 	stabilized  time.Time

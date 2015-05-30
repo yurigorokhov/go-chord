@@ -110,3 +110,18 @@ func mergeErrors(err1, err2 error) error {
 		return fmt.Errorf("%s\n%s", err1, err2)
 	}
 }
+
+//VNodes sortable
+type VnodeSortable []*Vnode
+
+func (self VnodeSortable) Len() int {
+	return len(self)
+}
+
+func (self VnodeSortable) Less(i, j int) bool {
+	return bytes.Compare(self[i].Id, self[j].Id) == -1
+}
+
+func (self VnodeSortable) Swap(i, j int) {
+	self[i], self[j] = self[j], self[i]
+}

@@ -1,9 +1,11 @@
 package chord
 
 import (
+	"bytes"
 	"encoding/binary"
 	"fmt"
 	"log"
+	"sort"
 	"time"
 )
 
@@ -23,6 +25,10 @@ func (vn *localVnode) init(idx int) {
 	// Initialize all state
 	vn.successors = make([]*Vnode, vn.ring.config.NumSuccessors)
 	vn.finger = make([]*Vnode, vn.ring.config.hashBits)
+
+	//Init node cache.
+	vn.nodeCache = make(map[string]*Vnode)
+	vn.nodeCache[string(vn.Id)] = &vn.Vnode
 
 	// Register with the RPC mechanism
 	vn.ring.transport.Register(&vn.Vnode, vn)
@@ -244,6 +250,13 @@ func (vn *localVnode) checkPredecessor() error {
 	return nil
 }
 
+//Find successor results, to be used in channels
+type FindSuccessorsResult struct {
+	Meta  LookupMetaData
+	Nodes []*Vnode
+	Err   error
+}
+
 // Finds next N successors. N must be <= NumSuccessors
 func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
 	// Check if we are the immediate predecessor
@@ -254,41 +267,106 @@ func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (Lo
 	// Append ourselves to the node path
 	meta.LookupPath = append(meta.LookupPath, &vn.Vnode)
 
-	// Try the closest preceeding nodes
-	cp := closestPreceedingVnodeIterator{}
-	cp.init(vn, key)
-	for {
-		// Get the next closest node
-		closest := cp.Next()
-		if closest == nil {
-			break
+	//Cache lookup function
+	lookupCache := func() FindSuccessorsResult {
+		//nodeCache values as a sorted slice
+		cacheNodes := make([]*Vnode, 0)
+		for _, node := range vn.nodeCache {
+			cacheNodes = append(cacheNodes, node)
 		}
+		sort.Sort(VnodeSortable(cacheNodes))
 
-		// Try that node, break on success
-		meta, res, err := vn.ring.transport.FindSuccessors(closest, n, key, meta)
-		if err == nil {
-			return meta, res, nil
-		} else {
-			log.Printf("[ERR] Failed to contact %s. Got %s", closest.String(), err)
-		}
-	}
+		//Get nearest node in cache
+		cacheNearest := nearestVnodeToKey(cacheNodes, key)
 
-	// Determine how many successors we know of
-	successors := vn.knownSuccessors()
-
-	// Check if the ID is between us and any non-immediate successors
-	for i := 1; i <= successors-n; i++ {
-		if betweenRightIncl(vn.Id, vn.successors[i].Id, key) {
-			remain := vn.successors[i:]
-			if len(remain) > n {
-				remain = remain[:n]
+		//Print stuff
+		if false {
+			fmt.Println(vn, "Node")
+			for _, node := range cacheNodes {
+				fmt.Println(node, "Cache")
 			}
-			return meta, remain, nil
+			fmt.Println(cacheNearest, "Nearest")
+			fmt.Printf("%x Key\n\n", key)
+		}
+
+		//Only do something if the cache nearest is ourselves.
+		if bytes.Compare(cacheNearest.Id, vn.Id) != 0 {
+			meta, res, err := vn.ring.transport.FindSuccessors(cacheNearest, n, key, meta)
+			return FindSuccessorsResult{meta, res, err}
+		}
+		return FindSuccessorsResult{NewLookupMetaData(), nil, fmt.Errorf("No valid cache entry")}
+	}
+
+	//Finger table + successors list lookup function
+	lookupFinger := func() FindSuccessorsResult {
+		// Try the closest preceeding nodes
+		cp := closestPreceedingVnodeIterator{}
+		cp.init(vn, key)
+		for {
+			// Get the next closest node
+			closest := cp.Next()
+			if closest == nil {
+				break
+			}
+
+			// Try that node, break on success
+			meta, res, err := vn.ring.transport.FindSuccessors(closest, n, key, meta)
+			if err == nil {
+				return FindSuccessorsResult{meta, res, nil}
+			} else {
+				log.Printf("[ERR] Failed to contact %s. Got %s", closest.String(), err)
+			}
+		}
+
+		// Determine how many successors we know of
+		successors := vn.knownSuccessors()
+
+		// Check if the ID is between us and any non-immediate successors
+		for i := 1; i <= successors-n; i++ {
+			if betweenRightIncl(vn.Id, vn.successors[i].Id, key) {
+				remain := vn.successors[i:]
+				if len(remain) > n {
+					remain = remain[:n]
+				}
+				return FindSuccessorsResult{meta, remain, nil}
+			}
+		}
+
+		// Checked all closer nodes and our successors!
+		return FindSuccessorsResult{NewLookupMetaData(), nil, fmt.Errorf("Exhausted all preceeding nodes!")}
+	}
+
+	if vn.ring.config.UseCache {
+		resultChan := make(chan FindSuccessorsResult)
+		defer close(resultChan)
+		go func() {
+			resultChan <- lookupCache()
+		}()
+		go func() {
+			resultChan <- lookupFinger()
+		}()
+
+		//Result the first successful result
+		for i := 0; i < 2; i++ {
+			channelResult := <-resultChan
+			if channelResult.Err == nil {
+				//Update cache
+				for _, node := range channelResult.Nodes {
+					vn.nodeCache[string(node.Id)] = node
+				}
+				return channelResult.Meta, channelResult.Nodes, channelResult.Err
+			}
 		}
 	}
 
-	// Checked all closer nodes and our successors!
-	return NewLookupMetaData(), nil, fmt.Errorf("Exhausted all preceeding nodes!")
+	result := lookupFinger()
+	if result.Err == nil {
+		//Update cache
+		for _, node := range result.Nodes {
+			vn.nodeCache[string(node.Id)] = node
+		}
+	}
+	return result.Meta, result.Nodes, result.Err
 }
 
 // Instructs the vnode to leave
