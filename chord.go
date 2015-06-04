@@ -41,12 +41,14 @@ type Transport interface {
 
 // Meta data that is passed along and updated at each node
 type LookupMetaData struct {
-	LookupPath []*Vnode
+	LookupPath    []*Vnode
+	IsCacheLookup bool
 }
 
 func NewLookupMetaData() LookupMetaData {
 	return LookupMetaData{
-		LookupPath: make([]*Vnode, 0),
+		LookupPath:    make([]*Vnode, 0),
+		IsCacheLookup: false,
 	}
 }
 
@@ -220,11 +222,6 @@ func (r *Ring) Lookup(n int, key []byte) ([]*Vnode, error) {
 	h.Write(key)
 	key_hash := h.Sum(nil)
 
-	// TODO: do a cache request if cache is enabled
-	if r.config.UseCache {
-
-	}
-
 	// Find the nearest local vnode
 	nearest := r.nearestVnode(key_hash)
 
@@ -235,15 +232,14 @@ func (r *Ring) Lookup(n int, key []byte) ([]*Vnode, error) {
 		return nil, err
 	}
 	elapsedTime := time.Since(startTime)
-	go r.config.Stats.LookupTime(elapsedTime)
-	go r.config.Stats.LookupNumberOfJumps(len(meta.LookupPath))
-
-	// Update cache
-	if r.config.UseCache {
-		for _, successor := range successors {
-			r.nodeCache[string(successor.Id)] = successor
+	go func() {
+		r.config.Stats.LookupTime(elapsedTime)
+		r.config.Stats.LookupNumberOfJumps(len(meta.LookupPath))
+		r.config.Stats.LookupCountIncr()
+		if meta.IsCacheLookup {
+			r.config.Stats.SuccessfulCacheResult()
 		}
-	}
+	}()
 
 	// Trim the nil successors
 	for successors[len(successors)-1] == nil {

@@ -3,8 +3,6 @@ package stats
 import (
 	"fmt"
 	"time"
-
-	"github.com/quipo/statsd"
 )
 
 // Capture statistics of Chord operations
@@ -15,6 +13,12 @@ type ChordStats interface {
 
 	// How long did a lookup take
 	LookupTime(duration time.Duration)
+
+	// Track successful cache results
+	SuccessfulCacheResult()
+
+	// Track how many lookups are performed
+	LookupCountIncr()
 }
 
 // Drop all statistics
@@ -24,18 +28,26 @@ func (t *BlackholeStats) LookupNumberOfJumps(n int) {}
 
 func (t *BlackholeStats) LookupTime(duration time.Duration) {}
 
+func (t *BlackholeStats) SuccessfulCacheResult() {}
+
+func (t *BlackholeStats) LookupCountIncr() {}
+
 var _ ChordStats = ChordStats(&BlackholeStats{})
 
 // Just print the stats to the console
 type PrintStats struct {
 	LookupNumberOfJumpsArr []int
 	LookupTimeArr          []time.Duration
+	SuccessfulCacheResults int
+	LookupCount            int
 }
 
 func NewPrintStats() *PrintStats {
 	return &PrintStats{
 		LookupNumberOfJumpsArr: make([]int, 0),
 		LookupTimeArr:          make([]time.Duration, 0),
+		SuccessfulCacheResults: 0,
+		LookupCount:            0,
 	}
 }
 
@@ -47,6 +59,14 @@ func (t *PrintStats) LookupTime(duration time.Duration) {
 	t.LookupTimeArr = append(t.LookupTimeArr, duration)
 }
 
+func (t *PrintStats) SuccessfulCacheResult() {
+	t.SuccessfulCacheResults++
+}
+
+func (t *PrintStats) LookupCountIncr() {
+	t.LookupCount++
+}
+
 func (t *PrintStats) Print() {
 	numJumps := make([]float64, 0)
 	for _, n := range t.LookupNumberOfJumpsArr {
@@ -56,6 +76,8 @@ func (t *PrintStats) Print() {
 	fmt.Printf("\nMin: %v", findMin(numJumps))
 	fmt.Printf("\nMax: %v", findMax(numJumps))
 	fmt.Printf("\nAvg: %v", findAvg(numJumps))
+	fmt.Printf("\nCache hits: %v", t.SuccessfulCacheResults)
+	fmt.Printf("\nLookups: %v", t.LookupCount)
 
 	lookupTime := make([]float64, 0)
 	for _, n := range t.LookupTimeArr {
@@ -96,28 +118,3 @@ func findAvg(data []float64) float64 {
 }
 
 var _ ChordStats = ChordStats(&PrintStats{})
-
-// Send stats to statsd
-type StatsdClient struct {
-	Stats *statsd.StatsdBuffer
-}
-
-func NewStatsdClient(simulationPrefix string) *StatsdClient {
-	statsdClient := statsd.NewStatsdClient("localhost:8125", simulationPrefix)
-	statsdClient.CreateSocket()
-	interval := time.Second * 2
-	stats := statsd.NewStatsdBuffer(interval, statsdClient)
-	return &StatsdClient{
-		Stats: stats,
-	}
-}
-
-func (t *StatsdClient) LookupNumberOfJumps(n int) {
-	t.Stats.Total(".lookup.jumps.num", int64(n))
-}
-
-func (t *StatsdClient) LookupTime(duration time.Duration) {
-	t.Stats.PrecisionTiming(".lookup.time", duration)
-}
-
-var _ ChordStats = ChordStats(&StatsdClient{})

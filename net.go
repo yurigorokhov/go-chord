@@ -163,6 +163,8 @@ func (t *TCPTransport) getConn(host string) (*tcpOutConn, error) {
 	// Try to establish a connection
 	conn, err := net.DialTimeout("tcp", host, t.timeout)
 	if err != nil {
+		fmt.Printf("\nTIMEOUT: %v", t.timeout)
+		fmt.Printf("\nERROR: %+v", err)
 		return nil, err
 	}
 

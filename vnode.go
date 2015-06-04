@@ -269,6 +269,7 @@ func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (Lo
 
 	//Cache lookup function
 	lookupCache := func() FindSuccessorsResult {
+
 		//nodeCache values as a sorted slice
 		cacheNodes := make([]*Vnode, 0)
 		for _, node := range vn.nodeCache {
@@ -279,17 +280,7 @@ func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (Lo
 		//Get nearest node in cache
 		cacheNearest := nearestVnodeToKey(cacheNodes, key)
 
-		//Print stuff
-		if false {
-			fmt.Println(vn, "Node")
-			for _, node := range cacheNodes {
-				fmt.Println(node, "Cache")
-			}
-			fmt.Println(cacheNearest, "Nearest")
-			fmt.Printf("%x Key\n\n", key)
-		}
-
-		//Only do something if the cache nearest is ourselves.
+		//Only do something if the cache nearest is not ourselves.
 		if bytes.Compare(cacheNearest.Id, vn.Id) != 0 {
 			meta, res, err := vn.ring.transport.FindSuccessors(cacheNearest, n, key, meta)
 			return FindSuccessorsResult{meta, res, err}
@@ -335,38 +326,44 @@ func (vn *localVnode) FindSuccessors(n int, key []byte, meta LookupMetaData) (Lo
 		// Checked all closer nodes and our successors!
 		return FindSuccessorsResult{NewLookupMetaData(), nil, fmt.Errorf("Exhausted all preceeding nodes!")}
 	}
-
+	cacheResultChan := make(chan FindSuccessorsResult, 1)
+	lookupResultChan := make(chan FindSuccessorsResult, 1)
 	if vn.ring.config.UseCache {
-		resultChan := make(chan FindSuccessorsResult)
-		//defer close(resultChan)
 		go func() {
-			resultChan <- lookupCache()
+			cacheResultChan <- lookupCache()
 		}()
-		go func() {
-			resultChan <- lookupFinger()
-		}()
+	}
+	go func() {
+		lookupResultChan <- lookupFinger()
+	}()
+	var finalResult FindSuccessorsResult
+loop:
+	for {
+		select {
+		case res := <-cacheResultChan:
 
-		//Result the first successful result
-		for i := 0; i < 2; i++ {
-			channelResult := <-resultChan
-			if channelResult.Err == nil {
-				//Update cache
-				for _, node := range channelResult.Nodes {
-					vn.nodeCache[string(node.Id)] = node
-				}
-				return channelResult.Meta, channelResult.Nodes, channelResult.Err
+			// we are only done if there was no error in the cache lookup
+			// if there was an error wait for the lookup result
+			if res.Err == nil {
+				finalResult = res
+				finalResult.Meta.IsCacheLookup = true
+				break loop
 			}
+		case res := <-lookupResultChan:
+
+			// the lookup result is always final
+			finalResult = res
+			break loop
 		}
 	}
+	if finalResult.Err == nil {
 
-	result := lookupFinger()
-	if result.Err == nil {
 		//Update cache
-		for _, node := range result.Nodes {
+		for _, node := range finalResult.Nodes {
 			vn.nodeCache[string(node.Id)] = node
 		}
 	}
-	return result.Meta, result.Nodes, result.Err
+	return finalResult.Meta, finalResult.Nodes, finalResult.Err
 }
 
 // Instructs the vnode to leave

@@ -25,7 +25,6 @@ type nodeInfo struct {
 func main() {
 
 	// flags
-	var simulationName = flag.String("name", "default", "name of this simulation, used to name stats in statsd")
 	var numNodes = flag.Int("numnodes", DefaultNodeCount, "number of nodes")
 	var tcpDelay = flag.Int("tcpdelay", TcpDelay, "tcp delay in milliseconds")
 	var randDelayConfig = flag.String("randdelayconfig", "", "'200:.1|300:.2|500:.3' means delay 200ms 10% of the time, 300ms 20% of the time")
@@ -49,6 +48,7 @@ func main() {
 	}
 
 	// get a ring up and running!
+	fmt.Print("Starting ring ")
 	nodeMap := make(map[string]nodeInfo)
 	port := FirstTcpPort
 	tcpTimeout := time.Second * 30
@@ -56,14 +56,13 @@ func main() {
 		conf := chord.DefaultConfig(fmt.Sprintf(":%v", port))
 
 		// we don't need to stabilize that often, since we are not joining/leaving nodes yet
-		conf.StabilizeMin = time.Duration(1 * time.Millisecond)
-		conf.StabilizeMax = time.Duration(uint64(*numNodes) * uint64(time.Millisecond) * delayConf.MaxPossibleDelay() * 10)
+		conf.StabilizeMin = 1 * time.Second
+		conf.StabilizeMax = 3 * time.Second
 		conf.NumSuccessors = 1
 		conf.Stats = stats
 		conf.UseCache = *useCache
 
 		// 2 virtual nodes per physical node
-		// TODO(yurig): can we get this down to 1?
 		conf.NumVnodes = 2
 		var r *chord.Ring
 		var err error
@@ -95,13 +94,15 @@ func main() {
 			Ring:      r,
 			Transport: transport,
 		}
+		time.Sleep(5 * time.Second)
+		fmt.Print(".")
 		port++
 	}
 	fmt.Printf("\nCreated %v nodes", *numNodes)
 	fmt.Printf("\nWaiting %v seconds for the ring to settle\n", *numNodes*2)
 	time.Sleep(time.Duration(int64(time.Second) * int64(*numNodes*2)))
-	fmt.Printf("\nBeginning Simulation with name %s and general TCP delay of %vms, and TCP random delay of %v\n",
-		*simulationName, delayConf.FindSuccessorsDelay, *randDelayConfig)
+	fmt.Printf("\nBeginning Simulation w/ general TCP delay of %vms, and TCP random delay of %v, and caching:%v\n",
+		delayConf.FindSuccessorsDelay, *randDelayConfig, *useCache)
 	if err := RandomKeyLookups(nodeMap, 100); err != nil {
 		fmt.Printf("\nError running simulation: %v\n", err)
 		os.Exit(1)
