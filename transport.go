@@ -2,7 +2,9 @@ package chord
 
 import (
 	"fmt"
+	"math/rand"
 	"sync"
+	"time"
 )
 
 // Wraps vnode and object
@@ -11,14 +13,42 @@ type localRPC struct {
 	obj   VnodeRPC
 }
 
+// Captures a delay and the probability of it occuring
+type ProbabilityDelay struct {
+	Probability float64
+	Delay       uint64
+}
+
+// Config for DelayedTCPTransport
+// All delays are in milliseconds
+type DelayTCPConfig struct {
+	FindSuccessorsDelay uint64
+	RandomDelays        []ProbabilityDelay
+}
+
+func (c *DelayTCPConfig) MaxPossibleDelay() uint64 {
+
+	// find the maximum delay in RandomDelays
+	var maxDelay uint64 = 0
+	for _, d := range c.RandomDelays {
+		if d.Delay > maxDelay {
+			maxDelay = d.Delay
+		}
+	}
+	return c.FindSuccessorsDelay + maxDelay
+}
+
 // LocalTransport is used to provides fast routing to Vnodes running
 // locally using direct method calls. For any non-local vnodes, the
 // request is passed on to another transport.
 type LocalTransport struct {
-	host   string
-	remote Transport
-	lock   sync.RWMutex
-	local  map[string]*localRPC
+	host       string
+	remote     Transport
+	lock       sync.RWMutex
+	local      map[string]*localRPC
+	FakeTcp    bool
+	config     *DelayTCPConfig
+	randSource *rand.Rand
 }
 
 // Creates a local transport to wrap a remote transport
@@ -29,7 +59,17 @@ func InitLocalTransport(remote Transport) Transport {
 	}
 
 	local := make(map[string]*localRPC)
-	return &LocalTransport{remote: remote, local: local}
+	return &LocalTransport{remote: remote, local: local, FakeTcp: false}
+}
+
+func InitLocalTransportFakeTcp(remote Transport, conf *DelayTCPConfig) Transport {
+	// Replace a nil transport with black hole
+	if remote == nil {
+		remote = &BlackholeTransport{}
+	}
+
+	local := make(map[string]*localRPC)
+	return &LocalTransport{remote: remote, local: local, FakeTcp: true, config: conf, randSource: rand.New(rand.NewSource(time.Now().Unix()))}
 }
 
 // Checks for a local vnode
@@ -47,7 +87,7 @@ func (lt *LocalTransport) get(vn *Vnode) (VnodeRPC, bool) {
 
 func (lt *LocalTransport) ListVnodes(host string) ([]*Vnode, error) {
 	// Check if this is a local host
-	if host == lt.host {
+	if host == lt.host || lt.FakeTcp {
 		// Generate all the local clients
 		res := make([]*Vnode, 0, len(lt.local))
 
@@ -105,6 +145,26 @@ func (lt *LocalTransport) Notify(vn, self *Vnode) ([]*Vnode, error) {
 }
 
 func (lt *LocalTransport) FindSuccessors(vn *Vnode, n int, key []byte, meta LookupMetaData) (LookupMetaData, []*Vnode, error) {
+	if lt.config != nil && lt.config.FindSuccessorsDelay > 0 {
+		time.Sleep(time.Duration(lt.config.FindSuccessorsDelay * uint64(time.Millisecond)))
+	}
+	if lt.config != nil && len(lt.config.RandomDelays) > 0 {
+
+		// pick a random number in the range [0,1)
+		r := lt.randSource.Float64()
+
+		// find the maximum probability that is smaller than rand, use the delay that corresponds to that probability
+		j := -1
+		for i, d := range lt.config.RandomDelays {
+			if d.Probability > r && (j == -1 || d.Probability < lt.config.RandomDelays[j].Probability) {
+				j = i
+			}
+		}
+		if j > -1 {
+			time.Sleep(time.Duration(lt.config.RandomDelays[j].Delay * uint64(time.Millisecond)))
+		}
+	}
+
 	// Look for it locally
 	obj, ok := lt.get(vn)
 
